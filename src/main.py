@@ -9,11 +9,10 @@ Usage:
     python main.py --part 3     # Run only Part 3 (testing pipeline)
     python main.py --part 4     # Run only Part 4 (HITL design)
 """
-import sys
 import asyncio
 import argparse
 
-from core.config import setup_api_key
+from core.config import STUDENT_ID, setup_api_key
 
 
 async def part1_attacks():
@@ -22,33 +21,52 @@ async def part1_attacks():
     print("PART 1 / Hạng mục B: Attack Unsafe + Guards agents")
     print("=" * 60)
 
-    from agents.agent import create_unsafe_agent, test_agent
+    from agents.agent import create_unsafe_agent
     from agents.guards_agent import create_guards_agent
-    from attacks.attacks import run_attacks, generate_ai_attacks, save_attack_results
+    from attacks.attacks import (
+        ai_attacks_to_prompts,
+        generate_ai_attacks,
+        run_attacks,
+        save_attack_results,
+        write_run_attack_json,
+    )
 
-    # --- Unsafe (required for hạng mục B) ---
     unsafe_agent, unsafe_runner = create_unsafe_agent()
-    await test_agent(unsafe_agent, unsafe_runner)
-
-    print("\n--- Attacks on UNSAFE agent (hạng mục B) ---")
-    unsafe_results = await run_attacks(
-        unsafe_agent, unsafe_runner, target_name="unsafe"
-    )
-
-    # --- Guards (điểm cộng only if leaked=true here) ---
-    print("\n--- Attacks on GUARDS agent (điểm cộng nếu LEAKED) ---")
     guards_agent, guards_runner = create_guards_agent()
+
+    print("\n--- Manual attacks on UNSAFE agent ---")
+    unsafe_results = await run_attacks(
+        unsafe_agent, unsafe_runner, target_name="unsafe", save_json=False
+    )
+    print("\n--- Manual attacks on GUARDS agent ---")
     guards_results = await run_attacks(
-        guards_agent, guards_runner, target_name="guards"
+        guards_agent, guards_runner, target_name="guards", save_json=False
     )
 
-    print("\n--- Generating AI attacks (TODO 14) ---")
-    ai_attacks = await generate_ai_attacks()
+    print("\n--- Generating and replaying AI attacks ---")
+    try:
+        ai_attacks = await generate_ai_attacks()
+    except Exception as error:
+        print(f"AI attack generation failed: {type(error).__name__}: {error}")
+        ai_attacks = []
+    ai_prompts = ai_attacks_to_prompts(ai_attacks)
+    if ai_prompts:
+        unsafe_results += await run_attacks(
+            unsafe_agent, unsafe_runner, prompts=ai_prompts,
+            target_name="unsafe", save_json=False,
+        )
+        guards_results += await run_attacks(
+            guards_agent, guards_runner, prompts=ai_prompts,
+            target_name="guards", save_json=False,
+        )
 
+    write_run_attack_json(unsafe_results, target_name="unsafe")
+    write_run_attack_json(guards_results, target_name="guards")
     save_attack_results(
         unsafe_results=unsafe_results,
         guards_results=guards_results,
         ai_attacks=ai_attacks,
+        student_id=STUDENT_ID,
     )
 
     bonus_leaks = sum(1 for r in guards_results if r.get("leaked"))
@@ -147,8 +165,6 @@ def part4_hitl():
 
 async def part5_assignment_suite():
     """Run defense suite → write outputs/results.json (+ audit/metrics)."""
-    import os
-
     print("\n" + "=" * 60)
     print("PART 5: Assignment suite → outputs/*.json")
     print("=" * 60)
@@ -159,7 +175,7 @@ async def part5_assignment_suite():
         run_assignment_suite,
     )
 
-    student_id = os.environ.get("STUDENT_ID", "").strip() or "SE00000"
+    student_id = STUDENT_ID
     try:
         plugins = build_production_plugins()
         audit, monitor = build_observability()
@@ -185,10 +201,9 @@ async def main(parts=None):
     Args:
         parts: List of part numbers to run, or None for all
     """
-    setup_api_key()
-
     if parts is None:
         parts = [1, 2, 3, 4]
+    setup_api_key(required=any(part in {1, 2, 3} for part in parts))
 
     for part in parts:
         if part == 1:

@@ -2,14 +2,30 @@
 Lab 11 — Configuration & API Key Setup
 """
 import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+from google.adk.models.lite_llm import LiteLlm
 
 
-def setup_api_key():
-    """Load Google API key from environment or prompt."""
-    if "GOOGLE_API_KEY" not in os.environ:
-        os.environ["GOOGLE_API_KEY"] = input("Enter Google API Key: ")
-    os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "0"
-    print("API key loaded.")
+REPO_ROOT = Path(__file__).resolve().parents[2]
+STUDENT_ID = "2A202601755"
+
+
+def create_adk_model() -> LiteLlm:
+    model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini").strip()
+    return LiteLlm(model=f"openai/{model}")
+
+
+def setup_api_key(required: bool = True) -> bool:
+    """Load the configured OpenAI key without prompting or printing it."""
+    load_dotenv(REPO_ROOT / ".env")
+    key_present = bool(os.environ.get("OPENAI_API_KEY", "").strip())
+    if required and not key_present:
+        raise RuntimeError(
+            "OPENAI_API_KEY is required for live parts. Configure it in .env."
+        )
+    return key_present
 
 
 # Allowed banking topics (used by topic_filter)

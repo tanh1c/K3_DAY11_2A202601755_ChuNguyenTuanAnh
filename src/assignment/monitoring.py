@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from pathlib import Path
 
 
 @dataclass
@@ -35,12 +36,29 @@ class MonitoringAlert:
     judge_fails: int = 0
 
     def check_metrics(self) -> list[Alert]:
-        """TODO: compute rates, append Alert objects when thresholds exceeded."""
-        raise NotImplementedError("Implement MonitoringAlert.check_metrics")
+        """Compute rates and keep one current alert per exceeded metric."""
+        snapshot = self.snapshot()
+        candidates = (
+            ("block_rate", snapshot["block_rate"], self.block_rate_threshold),
+            ("rate_limit_hits", self.rate_limit_hits, self.rate_limit_hit_threshold),
+            ("judge_fail_rate", snapshot["judge_fail_rate"], self.judge_fail_rate_threshold),
+        )
+        self.alerts = [
+            Alert(metric, float(value), float(threshold), f"{metric} threshold exceeded")
+            for metric, value, threshold in candidates
+            if value >= threshold
+        ]
+        return self.alerts
 
     def export_json(self, filepath: str = "outputs/metrics.json"):
-        """TODO: write metrics + alerts to JSON."""
-        raise NotImplementedError("Implement MonitoringAlert.export_json")
+        """Write metrics and alerts to JSON."""
+        self.check_metrics()
+        path = Path(filepath)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(self.snapshot(), ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
 
     def snapshot(self) -> dict:
         block_rate = (
